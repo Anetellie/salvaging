@@ -1,33 +1,60 @@
-Salvaging – Simple Tracker for Sailing
+⛵ Salvaging – Sailing Activity Tracker
 
-This plugin helps you keep track of what’s going on while you’re out salvaging at sea.
-It gives you a small, easy-to-read overlay that shows:
+A simple and clean helper for Sailing’s salvaging activity.
+This plugin gives you a quick overview of what’s happening on your boat without any complicated setup.
 
-What the plugin shows
+ What It Does
 
-Your cargo amount
-After you’ve opened your cargo once, the plugin remembers it and keeps it updated as you collect more salvage.
+This plugin shows a lightweight overlay with the most important salvaging info:
 
-How much your crew is salvaging
-It counts how many hooks each crew member lands, and keeps track of the total for the whole crew.
+📦 Cargo Tracking
 
-If you are salvaging or cleaning
-It can tell when you start or stop working on a wreck, or when you’re brushing debris off your hook.
+Updates after you open your cargo once
 
-What it’s for
+Shows how much space you’ve used
 
-The idea is to give you a quick overview of:
+Helps you keep an eye on when it’s time to sort
 
-How active the crew is
+👥 Crew Activity
 
-How full your cargo is getting
+Counts how many hooks each crew member lands
 
-Whether you are currently doing something or just waiting around
+Tracks the total amount of salvage brought in
 
-Everything is shown in a simple, lightweight overlay so you can glance at it while sailing.
+Lets you see at a glance how active your crew is
 
-How to use it
+🪝 Your Own Salvaging
 
-Just hop on a boat and start salvaging.
-Open your cargo once so the plugin knows your storage size.
-After that, it updates automatically as you continue your run.
+Detects when you start salvaging
+
+Detects when you’re cleaning your hook
+
+Helps you know whether you’re working or waiting
+
+🎯 Why Use It?
+
+This plugin keeps things simple:
+You get a clear, always-visible summary of what’s going on at sea —
+no menus, no settings, no noise.
+
+Perfect for:
+
+Staying aware during semi-AFK salvaging
+
+Knowing if your crew is actually doing anything
+
+Tracking your cargo before it fills up
+
+Seeing what you are doing at a glance
+
+🛶 How to Use
+
+Get on a boat
+
+Open your cargo once
+
+Start salvaging
+
+The overlay will automatically update throughout your run.
+
+That’s it — the plugin takes care of the rest.
