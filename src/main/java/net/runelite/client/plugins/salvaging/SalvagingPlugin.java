@@ -36,8 +36,7 @@ import net.runelite.client.util.Text;
 @PluginDescriptor(
         name = "Salvaging",
         description = "Shows salvaging status, cargo count and crew stats while Sailing.",
-        tags = {"sailing", "salvage", "cargo"},
-        enabledByDefault = false
+        tags = {"sailing", "salvage", "cargo"}
 )
 @Singleton
 public class SalvagingPlugin extends Plugin
