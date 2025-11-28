@@ -2,7 +2,6 @@ package com.salvaging;
 
 import net.runelite.client.RuneLite;
 import net.runelite.client.externalplugins.ExternalPluginManager;
-import net.runelite.client.plugins.salvaging.SalvagingPlugin;
 
 public class SalvagingPluginTest
 {

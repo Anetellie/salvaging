@@ -1,4 +1,4 @@
-package net.runelite.client.plugins.salvaging;
+package com.salvaging;
 
 import java.awt.Color;
 import java.awt.Dimension;

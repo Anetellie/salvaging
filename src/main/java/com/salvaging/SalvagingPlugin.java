@@ -1,4 +1,4 @@
-package net.runelite.client.plugins.salvaging;
+package com.salvaging;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.inject.Provides;
@@ -35,7 +35,7 @@ import net.runelite.client.util.Text;
 
 @PluginDescriptor(
         name = "Salvaging",
-        description = "Shows salvaging status, cargo count and crew stats while Sailing.",
+        description = "Shows salvaging statuses, cargo count and crew stats while Sailing.",
         tags = {"sailing", "salvage", "cargo"}
 )
 @Singleton
