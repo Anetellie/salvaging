@@ -12,9 +12,9 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.ui.overlay.components.LineComponent;
 import net.runelite.client.ui.overlay.components.TitleComponent;
 
-public class SalvageCargoOverlay extends OverlayPanel
+class SalvageCargoOverlay extends OverlayPanel
 {
-
+    // Cargo group so we can read real numbers when the window is open
     private static final int CARGO_GROUP_ID = 943;
 
     private final Client client;
@@ -24,10 +24,10 @@ public class SalvageCargoOverlay extends OverlayPanel
     @Inject
     private SalvageCargoOverlay(Client client, SalvagingPlugin plugin, SalvagingConfig config)
     {
+        super(plugin);
         this.client = client;
         this.plugin = plugin;
         this.config = config;
-
         setPosition(OverlayPosition.TOP_LEFT);
     }
 
@@ -35,6 +35,7 @@ public class SalvageCargoOverlay extends OverlayPanel
     public Dimension render(Graphics2D graphics)
     {
         panelComponent.getChildren().clear();
+
         if (!plugin.isOnBoat())
         {
             return null;
@@ -47,8 +48,7 @@ public class SalvageCargoOverlay extends OverlayPanel
         int used = plugin.getCargoUsed();
         int max = plugin.getCargoMax();
 
-        //  If the cargo window is open, override with *real* widget text
-
+        // --- If the cargo window is open, try to override with the actual "X / Y" text ---
         for (int child = 0; child < 30; child++)
         {
             Widget w = client.getWidget(CARGO_GROUP_ID, child);
@@ -62,7 +62,6 @@ public class SalvageCargoOverlay extends OverlayPanel
             {
                 continue;
             }
-
 
             String stripped = text.trim();
             int slashIdx = stripped.indexOf('/');
@@ -87,7 +86,7 @@ public class SalvageCargoOverlay extends OverlayPanel
             }
             catch (NumberFormatException ignored)
             {
-                // try next child
+                // just skip this child
             }
         }
 
@@ -98,10 +97,40 @@ public class SalvageCargoOverlay extends OverlayPanel
                         .build()
         );
 
-        String rightText = (max > 0) ? (used + " / " + max) : Integer.toString(used);
+        boolean cargoFullFlag = plugin.isCargoReallyFull();
 
+        String rightText;
         Color rightColor = Color.WHITE;
-        if (max > 0 && config.highlightCargoWhenFull() && used >= max)
+
+        if (max > 0)
+        {
+            // We know the max
+            if (cargoFullFlag)
+            {
+                rightText = "FULL";
+            }
+            else
+            {
+                rightText = used + " / " + max;
+            }
+        }
+        else
+        {
+            // Max is unknown (haven't opened cargo yet, or couldn't parse)
+            if (cargoFullFlag)
+            {
+                rightText = "FULL";
+            }
+            else
+            {
+                // your requested behavior: "unknown cargo"
+                // rendered as "Cargo: Unknown"
+                rightText = "Unknown";
+                rightColor = Color.GRAY;
+            }
+        }
+
+        if (cargoFullFlag && config.highlightCargoWhenFull())
         {
             rightColor = config.cargoFullColor();
         }
