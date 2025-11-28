@@ -7,7 +7,11 @@ This plugin gives you a quick overview of what’s happening on your boat withou
 
 This plugin shows a lightweight overlay with the most important salvaging info:
 
-📦 Cargo Tracking
+Crystal support
+Keeps a track of your crystal thing
+
+
+ Cargo Tracking
 
 Updates after you open your cargo once
 
@@ -15,7 +19,7 @@ Shows how much space you’ve used
 
 Helps you keep an eye on when it’s time to sort
 
-👥 Crew Activity
+ Crew Activity
 
 Counts how many hooks each crew member lands
 
@@ -31,7 +35,7 @@ Detects when you’re cleaning your hook
 
 Helps you know whether you’re working or waiting
 
-🎯 Why Use It?
+ Why Use It?
 
 This plugin keeps things simple:
 You get a clear, always-visible summary of what’s going on at sea —
@@ -47,7 +51,7 @@ Tracking your cargo before it fills up
 
 Seeing what you are doing at a glance
 
-🛶 How to Use
+ How to Use
 
 Get on a boat
 
