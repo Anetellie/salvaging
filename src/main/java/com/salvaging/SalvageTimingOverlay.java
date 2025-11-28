@@ -27,6 +27,7 @@ class SalvageTimingOverlay extends OverlayPanel
     public Dimension render(Graphics2D graphics)
     {
         panelComponent.getChildren().clear();
+
         if (!plugin.isOnBoat())
         {
             return null;
@@ -40,9 +41,12 @@ class SalvageTimingOverlay extends OverlayPanel
         double avgSeconds = plugin.getCrewAverageIntervalSeconds();
         int sinceLast = plugin.getCrewSecondsSinceLastSalvage();
 
-        if (total == 0)
+        // Crystal hook cooldown (-1 = never seen, 0 = ready, >0 = seconds left)
+        int crystalRemaining = plugin.getCrystalCooldownSecondsRemaining();
+
+        // If we have neither salvage data nor crystal info, hide the panel
+        if (total == 0 && crystalRemaining < 0)
         {
-            // Nothing to show yet
             return null;
         }
 
@@ -53,26 +57,56 @@ class SalvageTimingOverlay extends OverlayPanel
                         .build()
         );
 
-        panelComponent.getChildren().add(
-                LineComponent.builder()
-                        .left("Total salvages:")
-                        .right(Integer.toString(total))
-                        .build()
-        );
-
-        panelComponent.getChildren().add(
-                LineComponent.builder()
-                        .left("Avg between hooks:")
-                        .right(String.format("%.1fs", avgSeconds))
-                        .build()
-        );
-
-        if (sinceLast >= 0)
+        // --- Crew salvage timing (only if we actually have any salvages) ---
+        if (total > 0)
         {
             panelComponent.getChildren().add(
                     LineComponent.builder()
-                            .left("Last salvage:")
-                            .right(sinceLast + "s ago")
+                            .left("Total salvages:")
+                            .right(Integer.toString(total))
+                            .build()
+            );
+
+            panelComponent.getChildren().add(
+                    LineComponent.builder()
+                            .left("Avg between hooks:")
+                            .right(String.format("%.1fs", avgSeconds))
+                            .build()
+            );
+
+            if (sinceLast >= 0)
+            {
+                panelComponent.getChildren().add(
+                        LineComponent.builder()
+                                .left("Last salvage:")
+                                .right(sinceLast + "s ago")
+                                .build()
+                );
+            }
+        }
+
+        // --- Crystal extractor cooldown (if we've seen at least one proc) ---
+        if (crystalRemaining >= 0)
+        {
+            String rightText;
+            Color rightColor;
+
+            if (crystalRemaining == 0)
+            {
+                rightText = "READY";
+                rightColor = Color.GREEN;
+            }
+            else
+            {
+                rightText = crystalRemaining + "s";
+                rightColor = Color.YELLOW;
+            }
+
+            panelComponent.getChildren().add(
+                    LineComponent.builder()
+                            .left("Crystal hook:")
+                            .right(rightText)
+                            .rightColor(rightColor)
                             .build()
             );
         }

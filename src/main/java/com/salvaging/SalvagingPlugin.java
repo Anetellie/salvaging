@@ -2,6 +2,7 @@ package com.salvaging;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.inject.Provides;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
@@ -9,18 +10,19 @@ import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
 import javax.inject.Singleton;
+
 import lombok.Getter;
 import net.runelite.api.Actor;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.NPC;
-import net.runelite.api.Player;
 import net.runelite.api.Skill;
-import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.NpcDespawned;
+import net.runelite.api.events.NpcSpawned;
 import net.runelite.api.events.OverheadTextChanged;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.WidgetLoaded;
@@ -41,13 +43,23 @@ import net.runelite.client.util.Text;
 @Singleton
 public class SalvagingPlugin extends Plugin
 {
-    // ---------- sailing/xp tracking ----------
+    // ---------- sailing / xp tracking ----------
 
     private static final int SAILING_XP_WINDOW_MINUTES = 5;
 
-    private int gameTickCounter = 0; // still handy if we ever want tick-based things
+    // Crystal extractor
+    private static final String CRYSTAL_MESSAGE =
+            "Your crystal extractor has harvested a crystal mote!";
+    private static final int CRYSTAL_COOLDOWN_SECONDS = 60;
+
+    // Cargo full message from crew
+    private static final String CARGO_FULL_CREW_MESSAGE =
+            "Your crewmate on the salvaging hook cannot salvage as the cargo hold is full.";
+
+    private int gameTickCounter = 0;
     private Instant lastCrewXpChatTime = null;
     private Instant lastSailingXpTime = null;
+    private Instant lastCrystalHarvestTime = null;
 
     private boolean hadRecentCrewXpChat()
     {
@@ -62,19 +74,25 @@ public class SalvagingPlugin extends Plugin
 
     // Animations we treat as "salvaging-related"
     private static final Set<Integer> SALVAGE_ANIMS = ImmutableSet.of(
-            13584, // hook cast 1
-            13577, // hook cast 2
-            13599  // salvaging / hauling anim
+            13576,
+            13577,
+            13583,
+            13584,
+            13599  // main salvaging / hauling anim
     );
 
     // All possible crew names we care about
     private static final Set<String> CREW_NAMES = Set.of(
             "Jobless Jim",
             "Ex-Captain Siad",
-            "Ada",
-            "Adventurer",
-            "Oarswoman",
-            "Olga"
+            "Adventurer Ada",
+            "Cabin Boy Jenkins",
+            "Oarswoman Olga",
+            "Jittery Jim",
+            "Bosun Zarah",
+            "Jolly Jim",
+            "Spotter Virginia",
+            "Sailor Jakob"
     );
 
     // Cargo hold widget ids
@@ -108,6 +126,14 @@ public class SalvagingPlugin extends Plugin
     private SalvageTimingOverlay timingOverlay;
 
     // --------- state ---------
+    @Getter
+    private final Map<Actor, Boolean> crewSalvaging = new HashMap<>();
+
+    @Getter
+    private final Map<Actor, Integer> crewIdleTicks = new HashMap<>();
+
+    @Getter
+    private final Set<Actor> crewmates = new java.util.HashSet<>();
 
     @Getter
     private boolean onBoat = false;
@@ -124,6 +150,9 @@ public class SalvagingPlugin extends Plugin
     private int cargoUsed = 0;
     private int cargoCapacity = 0;
 
+    @Getter
+    private boolean cargoFull = false;
+
     private static class CrewStats
     {
         int count;
@@ -136,6 +165,41 @@ public class SalvagingPlugin extends Plugin
     private int crewTotalSalvages = 0;
     private double crewAvgIntervalSeconds = 0.0;
     private Instant lastCrewSalvageTime = null;
+
+    // --------- animation / crew helpers ---------
+
+    private boolean isAnimationSalvaging(int anim)
+    {
+        return SALVAGE_ANIMS.contains(anim);
+    }
+
+    private boolean isCrewmateName(String name)
+    {
+        if (name == null)
+        {
+            return false;
+        }
+
+        String clean = Text.removeTags(name).trim();
+        return CREW_NAMES.contains(clean);
+    }
+
+    private boolean isMyCrew(NPC npc)
+    {
+        if (npc == null)
+        {
+            return false;
+        }
+
+        String raw = npc.getName();
+        if (raw == null)
+        {
+            return false;
+        }
+
+        String name = Text.removeTags(raw).trim();
+        return CREW_NAMES.contains(name);
+    }
 
     // --------- config ---------
 
@@ -175,6 +239,7 @@ public class SalvagingPlugin extends Plugin
 
         cargoUsed = 0;
         cargoCapacity = 0;
+        cargoFull = false;
 
         crewStats.clear();
         crewTotalSalvages = 0;
@@ -183,18 +248,18 @@ public class SalvagingPlugin extends Plugin
 
         lastSailingXpTime = null;
         lastCrewXpChatTime = null;
-        gameTickCounter = 0;
+        lastCrystalHarvestTime = null;
 
+        gameTickCounter = 0;
         onBoat = false;
+
+        crewmates.clear();
+        crewSalvaging.clear();
+        crewIdleTicks.clear();
     }
 
     // --------- helpers ----------
 
-    /**
-     * onBoat is true if we've had any Sailing XP within the XP window.
-     * If the window is 0 or negative, any Sailing XP keeps us "on boat"
-     * until logout or reset.
-     */
     private void updateOnBoatFlag()
     {
         if (lastSailingXpTime == null)
@@ -215,42 +280,14 @@ public class SalvagingPlugin extends Plugin
         onBoat = since.toMinutes() < windowMinutes;
     }
 
-    private boolean isNearLocalPlayer(NPC npc)
+    private void recomputeCargoFull()
     {
-        Player me = client.getLocalPlayer();
-        if (me == null || npc == null)
+        int max = getCargoMax();
+        if (max > 0)
         {
-            return false;
+            cargoFull = cargoUsed >= max;
         }
-
-        WorldPoint myLoc = WorldPoint.fromLocalInstance(client, me.getLocalLocation());
-        WorldPoint npcLoc = npc.getWorldLocation();
-
-        if (myLoc == null || npcLoc == null)
-        {
-            return false;
-        }
-
-        // Same-boat-ish radius; tweak if needed
-        return myLoc.distanceTo(npcLoc) <= 8;
-    }
-
-    private boolean isMyCrew(NPC npc)
-    {
-        if (npc == null)
-        {
-            return false;
-        }
-
-        String raw = npc.getName();
-        if (raw == null)
-        {
-            return false;
-        }
-
-        String name = Text.removeTags(raw).trim();
-        // Only care that the NPC is one of the known crew names
-        return CREW_NAMES.contains(name);
+        // if we don't know max, cargoFull can only be forced true by chat
     }
 
     private void updateCargoFromWidget()
@@ -319,6 +356,8 @@ public class SalvagingPlugin extends Plugin
                 }
             }
         }
+
+        recomputeCargoFull();
     }
 
     // --------- getters for overlays ----------
@@ -336,6 +375,20 @@ public class SalvagingPlugin extends Plugin
             return override;
         }
         return cargoCapacity;
+    }
+
+    /**
+     * Safe cargo-full check for overlays: uses numbers if we know them,
+     * otherwise falls back to the boolean flag.
+     */
+    public boolean isCargoReallyFull()
+    {
+        int max = getCargoMax();
+        if (max > 0)
+        {
+            return cargoUsed >= max;
+        }
+        return cargoFull;
     }
 
     Map<String, Integer> getCrewCatchCounts()
@@ -384,6 +437,33 @@ public class SalvagingPlugin extends Plugin
         return (int) Duration.between(lastCrewSalvageTime, Instant.now()).getSeconds();
     }
 
+    // -------- crystal cooldown helpers --------
+
+    /**
+     * Returns remaining crystal cooldown in seconds:
+     * -1 if we never saw the message yet,
+     *  0 if it's ready,
+     * >0 while on cooldown.
+     */
+    public int getCrystalCooldownSecondsRemaining()
+    {
+        if (lastCrystalHarvestTime == null)
+        {
+            return -1;
+        }
+
+        long elapsed = Duration.between(lastCrystalHarvestTime, Instant.now()).getSeconds();
+        long remaining = CRYSTAL_COOLDOWN_SECONDS - elapsed;
+
+        return (int) Math.max(0, remaining);
+    }
+
+    public boolean isCrystalOnCooldown()
+    {
+        int left = getCrystalCooldownSecondsRemaining();
+        return left > 0;
+    }
+
     // --------- event handlers ----------
 
     @Subscribe
@@ -394,33 +474,53 @@ public class SalvagingPlugin extends Plugin
             return;
         }
 
-        // Any change in Sailing XP means we're (almost certainly) on a ship
         lastSailingXpTime = Instant.now();
     }
 
     @Subscribe
     public void onAnimationChanged(AnimationChanged event)
     {
-        if (event.getActor() != client.getLocalPlayer())
+        Actor actor = event.getActor();
+        if (actor == null)
         {
             return;
         }
 
-        int anim = event.getActor().getAnimation();
-        boolean nowActive = SALVAGE_ANIMS.contains(anim);
+        // Match Drekk's plugin: ignore top-level world view
+        if (actor.getWorldView().isTopLevel())
+        {
+            return;
+        }
 
-        active = nowActive;
-        statusKnown = true;
-        salvaging = (anim == 13599); // “salvaging” animation
+        int anim = actor.getAnimation();
 
-        // Not strictly needed for onBoat anymore, but cheap to keep updated
-        updateOnBoatFlag();
+        // Player logic
+        if (actor == client.getLocalPlayer())
+        {
+            boolean nowActive = SALVAGE_ANIMS.contains(anim);
+
+            active = nowActive;
+            statusKnown = true;
+            salvaging = (anim == 13599);
+
+            updateOnBoatFlag();
+        }
+        // Crew logic
+        else if (crewmates.contains(actor))
+        {
+            if (isAnimationSalvaging(anim))
+            {
+                crewSalvaging.put(actor, true);
+                crewIdleTicks.put(actor, 0);
+            }
+            else
+            {
+                crewSalvaging.put(actor, false);
+                crewIdleTicks.put(actor, 0);
+            }
+        }
     }
 
-    /**
-     * Track crew hooks from NPC overhead text:
-     * "Managed to hook some salvage! I'll put it in the cargo hold."
-     */
     @Subscribe
     public void onOverheadTextChanged(OverheadTextChanged event)
     {
@@ -432,8 +532,9 @@ public class SalvagingPlugin extends Plugin
 
         NPC npc = (NPC) actor;
 
-        // Only our crew members (by name)
-        if (!isMyCrew(npc))
+        // Only our crew, on our world view
+        if (!isMyCrew(npc)
+                || npc.getWorldView() != client.getLocalPlayer().getWorldView())
         {
             return;
         }
@@ -451,13 +552,11 @@ public class SalvagingPlugin extends Plugin
             return;
         }
 
-        // Must be on our boat AND must have had the crew-XP chat message very recently
         if (!onBoat || !hadRecentCrewXpChat())
         {
             return;
         }
 
-        // --- per-crew stats ---
         String crewName = Text.removeTags(npc.getName()).trim();
         CrewStats cs = crewStats.computeIfAbsent(crewName, k -> new CrewStats());
         Instant now = Instant.now();
@@ -469,7 +568,6 @@ public class SalvagingPlugin extends Plugin
         }
         cs.last = now;
 
-        // --- global crew timing ---
         crewTotalSalvages++;
 
         if (lastCrewSalvageTime != null)
@@ -489,7 +587,6 @@ public class SalvagingPlugin extends Plugin
 
         lastCrewSalvageTime = now;
 
-        // --- cargo estimate: +1 per crew hook ---
         int max = getCargoMax();
         if (max > 0)
         {
@@ -499,8 +596,9 @@ public class SalvagingPlugin extends Plugin
         {
             cargoUsed++;
         }
-    }
 
+        recomputeCargoFull();
+    }
 
     @Subscribe
     public void onWidgetLoaded(WidgetLoaded event)
@@ -517,6 +615,18 @@ public class SalvagingPlugin extends Plugin
         gameTickCounter++;
 
         updateOnBoatFlag();
+
+        // Track idle ticks for crew
+        for (Actor crew : crewmates)
+        {
+            int currentIdle = crewIdleTicks.getOrDefault(crew, 0);
+            boolean working = crewSalvaging.getOrDefault(crew, false);
+
+            if (!working && currentIdle < 10)
+            {
+                crewIdleTicks.put(crew, currentIdle + 1);
+            }
+        }
 
         Widget universe = client.getWidget(CARGOHOLD_GROUP_ID, 0);
         if (universe != null && !universe.isHidden())
@@ -536,6 +646,7 @@ public class SalvagingPlugin extends Plugin
         }
 
         String clean = Text.removeTags(event.getMessage());
+        String msgLower = clean.toLowerCase();
 
         // crew XP line from Sailing
         if (clean.equals("You gain some experience by watching your crew work."))
@@ -543,17 +654,62 @@ public class SalvagingPlugin extends Plugin
             lastCrewXpChatTime = Instant.now();
         }
 
-        String msg = clean.toLowerCase();
-
-        // cargo full sync
-        if (msg.contains("cargo hold") && msg.contains("full"))
+        // Specific cargo-full line from crewmate
+        if (clean.equals(CARGO_FULL_CREW_MESSAGE))
         {
+            cargoFull = true;
+            int max = getCargoMax();
+            if (max > 0)
+            {
+                cargoUsed = max;
+            }
+            return;
+        }
+
+        // generic cargo full detection (other messages mentioning cargo full)
+        if (msgLower.contains("cargo hold") && msgLower.contains("full"))
+        {
+            cargoFull = true;
             int max = getCargoMax();
             if (max > 0)
             {
                 cargoUsed = max;
             }
         }
+
+        // crystal extractor harvested
+        if (clean.equals(CRYSTAL_MESSAGE))
+        {
+            lastCrystalHarvestTime = Instant.now();
+        }
+    }
+
+    @Subscribe
+    public void onNpcSpawned(NpcSpawned event)
+    {
+        NPC npc = event.getNpc();
+
+        // Only our named crew, same world view as us
+        if (!isCrewmateName(npc.getName())
+                || npc.getWorldView() != client.getLocalPlayer().getWorldView())
+        {
+            return;
+        }
+
+        if (crewmates.add(npc))
+        {
+            crewSalvaging.put(npc, false);
+            crewIdleTicks.put(npc, 0);
+        }
+    }
+
+    @Subscribe
+    public void onNpcDespawned(NpcDespawned event)
+    {
+        NPC npc = event.getNpc();
+        crewmates.remove(npc);
+        crewSalvaging.remove(npc);
+        crewIdleTicks.remove(npc);
     }
 
     @Subscribe

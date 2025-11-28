@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.Map;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
+
 import net.runelite.client.ui.overlay.OverlayPanel;
 import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.ui.overlay.components.LineComponent;
@@ -30,6 +31,8 @@ class SalvageCrewOverlay extends OverlayPanel
     public Dimension render(Graphics2D graphics)
     {
         panelComponent.getChildren().clear();
+
+        // Only show when we're on a boat and user wants the panel
         if (!plugin.isOnBoat())
         {
             return null;
@@ -39,8 +42,7 @@ class SalvageCrewOverlay extends OverlayPanel
             return null;
         }
 
-        Map<String, Integer> crew = plugin.getCrewCatchCounts();
-
+        // --- TITLE ---
         panelComponent.getChildren().add(
                 TitleComponent.builder()
                         .text("Salvage crew")
@@ -48,9 +50,45 @@ class SalvageCrewOverlay extends OverlayPanel
                         .build()
         );
 
-        if (crew == null || crew.isEmpty())
+        // Hook stats (historical data)
+        Map<String, Integer> crewHooks = plugin.getCrewCatchCounts();
+        boolean haveHookStats = crewHooks != null && !crewHooks.isEmpty();
+
+        // Live tracking (current NPCs)
+        int trackedCrew = plugin.getCrewmates().size();
+        long activeCrew = plugin.getCrewSalvaging().values().stream()
+                .filter(Boolean::booleanValue)
+                .count();
+
+        // --- LIVE ACTIVITY: only show if we actually have tracked crew ---
+        if (trackedCrew > 0)
         {
-            // Show panel even if nothing has happened yet
+            Color crewColor = activeCrew > 0 ? Color.GREEN : Color.RED;
+
+            panelComponent.getChildren().add(
+                    LineComponent.builder()
+                            .left("Crew salvaging:")
+                            .leftColor(crewColor)
+                            .right(activeCrew + "/" + trackedCrew)
+                            .rightColor(crewColor)
+                            .build()
+            );
+        }
+        else if (!haveHookStats)
+        {
+            // Only say "no crew" if we ALSO have no hook history
+            panelComponent.getChildren().add(
+                    LineComponent.builder()
+                            .left("No crew detected yet.")
+                            .leftColor(Color.GRAY)
+                            .build()
+            );
+        }
+
+        // --- HOOK STATS: how many hooks each crew has gotten so far ---
+        if (!haveHookStats)
+        {
+            // No hooks at all yet
             panelComponent.getChildren().add(
                     LineComponent.builder()
                             .left("No hooks yet.")
@@ -59,7 +97,7 @@ class SalvageCrewOverlay extends OverlayPanel
             return super.render(graphics);
         }
 
-        var sorted = crew.entrySet().stream()
+        var sorted = crewHooks.entrySet().stream()
                 .sorted(Comparator.comparingInt(Map.Entry<String, Integer>::getValue).reversed())
                 .collect(Collectors.toList());
 
@@ -85,5 +123,4 @@ class SalvageCrewOverlay extends OverlayPanel
 
         return super.render(graphics);
     }
-
 }
