@@ -61,4 +61,4 @@ Start salvaging
 
 The overlay will automatically update throughout your run.
 
-That’s it — the plugin takes care of the rest.
+That’s it the plugin takes care of the rest.
